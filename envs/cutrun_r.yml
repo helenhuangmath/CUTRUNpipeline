@@ -1,0 +1,23 @@
+# R packages for the CUT&RUN pipeline (consensus plots, annotation, DESeq2,
+# figures, HTML report)
+# Create once:  conda env create -f envs/cutrun_r.yml   (mamba is faster)
+name: cutrun_r
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base=4.3
+  - r-optparse
+  - r-data.table
+  - r-ggplot2
+  - r-ggrepel
+  - r-patchwork
+  - r-pheatmap
+  - r-rcolorbrewer
+  - r-venndiagram
+  - r-jsonlite
+  - bioconductor-deseq2
+  - bioconductor-chipseeker
+  - bioconductor-genomicfeatures
+  - bioconductor-genomicranges
+  - bioconductor-annotationdbi

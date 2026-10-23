@@ -1,0 +1,17 @@
+# One row per sample, tab-separated. Lines starting with # are skipped.
+#   sample      sample ID (letters, numbers, _ . -)
+#   fastq1/2    gzipped R1 / R2 fastq, inside DATADIR (or a full path). Several lanes: L1_R1.fastq.gz,L2_R1.fastq.gz
+#   mark        histone mark / target (must be in peak_settings.txt, otherwise "default" is used); IgG for IgG
+#   condition   group for consensus peaks and DESeq2
+#   replicate   1, 2, ...
+#   control     IgG sample of this sample, or -
+#   batch       batch label (same for all samples if one batch)
+sample	fastq1	fastq2	mark	condition	replicate	control	batch
+Naive_H3K27ac_R1	Naive_H3K27ac_R1_R1.fastq.gz	Naive_H3K27ac_R1_R2.fastq.gz	H3K27ac	Naive	1	IgG_R1	b1
+Naive_H3K27ac_R2	Naive_H3K27ac_R2_R1.fastq.gz	Naive_H3K27ac_R2_R2.fastq.gz	H3K27ac	Naive	2	IgG_R2	b2
+Arm_H3K27ac_R1	Arm_H3K27ac_R1_R1.fastq.gz	Arm_H3K27ac_R1_R2.fastq.gz	H3K27ac	Arm	1	IgG_R1	b1
+Arm_H3K27ac_R2	Arm_H3K27ac_R2_R1.fastq.gz	Arm_H3K27ac_R2_R2.fastq.gz	H3K27ac	Arm	2	IgG_R2	b2
+Cl13_H3K27ac_R1	Cl13_H3K27ac_R1_R1.fastq.gz	Cl13_H3K27ac_R1_R2.fastq.gz	H3K27ac	Cl13	1	IgG_R1	b1
+Cl13_H3K27ac_R2	Cl13_H3K27ac_R2_R1.fastq.gz	Cl13_H3K27ac_R2_R2.fastq.gz	H3K27ac	Cl13	2	IgG_R2	b2
+IgG_R1	IgG_R1_R1.fastq.gz	IgG_R1_R2.fastq.gz	IgG	IgG	1	-	b1
+IgG_R2	IgG_R2_R1.fastq.gz	IgG_R2_R2.fastq.gz	IgG	IgG	2	-	b2

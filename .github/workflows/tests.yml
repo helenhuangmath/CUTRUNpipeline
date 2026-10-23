@@ -1,0 +1,63 @@
+# Lint (Google style: ShellCheck, lintr) and the full test suite on every
+# push and pull request
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+
+  lint-bash:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck (settings in .shellcheckrc)
+        run: shellcheck run_pipeline.sh check_status.sh scripts/*.sh reference/*.sh tests/*.sh
+      - name: Lines of at most 80 characters
+        run: |
+          ! awk 'length > 80 { print FILENAME ":" FNR; found = 1 } END { exit !found }' \
+            run_pipeline.sh check_status.sh scripts/*.sh reference/*.sh tests/*.sh
+
+  lint-r:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: r-lib/actions/setup-r@v2
+      - name: Install lintr
+        run: Rscript -e 'install.packages("lintr", repos = "https://cloud.r-project.org")'
+      - name: lintr (settings in .lintr)
+        run: |
+          Rscript -e 'lints <- lintr::lint_dir("scripts/R"); print(lints); quit(status = length(lints) > 0)'
+
+  pipeline:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+
+      - name: Create the pipeline conda environments (envs/*.yml)
+        run: |
+          conda env create -f envs/cutrun.yml
+          conda env create -f envs/cutrun_r.yml
+
+      # FlexPeak is tested when it is installed in the cutrun environment, e.g.
+      #   conda run -n cutrun pip install "flexpeak[bam] @ git+<FlexPeak repository URL>"
+
+      - name: Run tests (simulated data, FASTQ -> HTML report)
+        run: TEST_CONDA_ENV=cutrun TEST_CONDA_ENV_R=cutrun_r bash tests/run_tests.sh
+
+      - name: Keep logs if the tests fail
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: |
+            tests/test_output/*.log
+            tests/test_output/Data/Log/

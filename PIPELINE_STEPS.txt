@@ -1,0 +1,136 @@
+================================================================================
+ CUT&RUN Pipeline: Steps of Data Alignment and Analysis
+================================================================================
+
+  FASTQ -> FastQC/MultiQC -> trim -> align -> filter/dedup -> BAM -> bigwig
+                                                 |
+       peaks per sample (MACS2 / FlexPeak) -> consensus per condition -> union
+                                                                          |
+               annotation -> count matrices of all samples -> QC summary
+                                                                          |
+               DESeq2 differential peaks -> figures -> HTML report
+
+  [script] = file in scripts/. Settings are in config.sh. Folders are in
+  WORKDIR. Parts of run_pipeline.sh: qc | align | peaks | matrix | diff
+
+
+================================================================================
+ PART qc: RAW READS (one job)                     [run_all_samples.sh qc]
+================================================================================
+
+Step 0. Reference genome (once per genome)        [reference/build_reference.sh]
+  Genome, bowtie2 index, <genome>.genomesize, <genome>.chr1toY.bed,
+  <genome>-blacklist.clean.bed (ENCODE v2), genes (GENCODE: TxDb + genes.txt)
+
+QC of raw reads
+  - FastQC of every raw fastq file (each lane)   -> QC/FastQC_raw/
+  - MultiQC report of them                       -> QC/MultiQC/multiqc_raw_fastq.html
+  Check: quality per base, adapter content, duplication, GC content.
+
+
+================================================================================
+ PART align and peaks: EACH SAMPLE (one job per sample)
+================================================================================
+
+Step 1. Trimming                                     [01_trim.sh]
+  - Merge lanes (several fastq files of one sample)
+  - fastp: remove adapters and low quality bases -> QC/<sample>.fastp.html
+    Important for CUT&RUN: many fragments are shorter than the read length.
+  - FastQC of the trimmed reads                  -> QC/FastQC_trimmed/
+  Check: adapters gone, reads kept after trimming.
+
+Step 2. Alignment and filtering                      [02_align.sh]
+  - bowtie2 --local --very-sensitive-local --no-mixed --no-discordant -I 10 -X 700
+  - keep properly paired reads (-f 2), mapping quality >= MIN_MAPQ (removes
+    multi-mapping reads), chr1-chrY only (removes chrM, random, chrUn)
+  - samtools markdup: remove PCR duplicates (REMOVE_DUPLICATES=false: only mark)
+  - optional spike-in (E. coli) fragment count
+  Output: BAM/<sample>.map.dedup.bam, .bowtie2.log, .align_stats.txt,
+          .fragment_size.txt
+  Check: alignment rate (> 80%), duplicate rate, unique fragments (>= 5M for
+         histone marks), fragment size peak ~150 bp (one nucleosome) for
+         histone marks, < 120 bp for transcription factors.
+
+Step 3. Bigwig                                       [03_bigwig.sh]
+  - bamCoverage, CPM (or spike-in) normalized, each fragment counted once over
+    its full length, blacklist skipped             -> Wig/<sample>.rpm.bw
+  Check: look at known marker genes in IGV.
+
+Step 4. Peak calling                                 [04_peaks.sh]
+  - MACS2 (-f BAMPE, --keep-dup all) and/or FlexPeak (PEAK_CALLERS), with the
+    options of the sample's mark in config/peak_settings.txt
+  - IGG_MODE=control: IgG sample as control (-c) for both callers
+  - remove peaks with low fold enrichment and in blacklist regions
+  - peaks for the analysis (ANALYSIS_PEAKS): macs2, flexpeak or both merged
+  - MACS2 vs FlexPeak: number of peaks, base-pair Jaccard overlap
+  Output: Peak/MACS2/, Peak/FlexPeak/, Peak/peak_<sample>.macs2.bed,
+          .flexpeak.bed, .final.bed, .callers.txt
+  Check: number and width of peaks; agreement of the two callers.
+
+
+================================================================================
+ PART matrix: ALL SAMPLES (one job)               [run_all_samples.sh matrix]
+================================================================================
+
+Step 5. Consensus and union peaks (each mark)        [05_consensus.sh]
+  - IgG regions: IgG peaks of all IgG samples, extended by IGG_EXTEND bp
+  - consensus peaks: in >= MIN_REPS replicates of a condition (any number of
+    replicates; replicate peaks closer than consensus_gap count as the same)
+  - union peaks: consensus peaks of all conditions merged, IgG regions removed,
+    narrow peaks removed, peak IDs added
+  Output: Consensus/<mark>/peak_consensus_<cond>.bed, peak_<mark>_union.bed,
+          Venn diagrams of replicates and conditions, peak width plot
+
+Step 6. Annotation                                   [06_annotate.sh]
+  - ChIPseeker: Promoter (TSS -2 kb to +500 bp) / exon / intron / intergenic,
+    nearest gene, all genes within FLANK bp; Homer (optional)
+  Output: Annotation/<mark>/peak_<mark>_union.anno.txt, .anno_allgenes.txt
+  Check: % promoter (high for H3K4me3, lower for H3K27ac, low for H3K9me3).
+
+Step 7. Count matrices of all samples                [07_count_matrix.sh]
+  - featureCounts: fragments of every sample of the mark in each union peak
+  - one matrix of all samples (union peaks x samples): raw, normalized with
+    DESeq2 size factors, and variance-stabilized (log2 scale); condition means
+  - FRiP (fraction of fragments in peaks), PCA and correlation of samples
+  Output: ReadCount/<mark>/RawRC_<mark>.txt, NormRC_<mark>.txt,
+          VST_<mark>.txt, NormRC_<mark>.CondMean.txt, sizeFactors_<mark>.txt
+  Check: FRiP; replicates cluster together in the PCA.
+
+QC summary of all samples                            [R/qc_summary.R]
+  - MultiQC of all steps; one table and plots: read pairs, alignment,
+    duplicates, peaks, FRiP, MACS2 vs FlexPeak, fragment sizes
+  Output: QC/MultiQC/multiqc_report.html, QC/Summary/
+
+
+================================================================================
+ PART diff: ALL SAMPLES (one job)                 [run_all_samples.sh diff]
+================================================================================
+
+Step 8. Differential peaks                           [08_diff.sh]
+  - one DESeq2 model with all samples of the mark, using the raw matrix and
+    size factors of step 7 (DESIGN: ~ condition or ~ batch + condition);
+    peaks with max read count < MIN_COUNT removed
+  - each comparison of comparison_list.txt: padj < PADJ and |log2FC| > LFC
+  Output: DiffPeak/<mark>/deseq2_All_/deseq2_Sig_<mark>_<trt>_vs_<ref>.txt,
+          _Up.bed, _Down.bed, MA, volcano and heatmap plots, summary
+  Check: MA plot centered at 0; number of differential peaks.
+
+Step 9. Figures                                      [09_figures.sh]
+  - deepTools computeMatrix: signal of every sample +-2 kb of each union peak
+  - Nature-style summary figure (183 mm wide, 7 pt, panels a-h): peaks per
+    caller, FRiP, genomic features, PCA, differential peaks, volcano plots,
+    average signal profiles and signal heatmap of differential peaks
+  Output: Figures/<mark>/Figure_<mark>_summary.pdf, signal_profile_,
+          signal_heatmap_<mark>.pdf
+
+Step 10. HTML report                                 [10_report.sh]
+  - one self-contained file for all marks: search a gene, peak ID or locus;
+    table of peaks with statistics of every comparison; signal profile and
+    normalized counts of the selected peak; links to UCSC and IGV;
+    download of the table
+  Output: Report/CUTRUN_report.html
+
+Downstream (not automatic): motifs (Homer findMotifsGenome.pl) and pathways
+(GREAT, clusterProfiler) of the _Up.bed / _Down.bed peaks.
+
+================================================================================

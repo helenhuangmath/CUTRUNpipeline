@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>__TITLE__</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f6f7f9; --text: #1d2125; --muted: #5f6b76;
+    --line: #dde1e6; --accent: #0072b2; --up: #d55e00; --down: #0072b2;
+    --row-hover: #eef4fa; --row-selected: #dcebf7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16191d; --panel: #1f2328; --text: #e6e8eb; --muted: #9aa5b1;
+      --line: #343a41; --accent: #56b4e9; --up: #f08a4b; --down: #56b4e9;
+      --row-hover: #23303c; --row-selected: #1f3b52;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  }
+  header { padding: 20px 24px 8px; }
+  h1 { margin: 0; font-size: 20px; }
+  .meta { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+  .controls {
+    display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+    padding: 12px 24px; border-bottom: 1px solid var(--line);
+  }
+  .controls label { color: var(--muted); font-size: 13px; }
+  select, input[type=search], button {
+    font: inherit; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px;
+  }
+  input[type=search] { width: min(360px, 100%); }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  #count { margin: 10px 24px 0; color: var(--muted); font-size: 13px; }
+  .layout {
+    display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 16px;
+    padding: 10px 24px 24px;
+  }
+  @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+  .table-wrap {
+    overflow: auto; max-height: calc(100vh - 190px);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { padding: 6px 10px; text-align: left; white-space: nowrap; }
+  thead th {
+    position: sticky; background: var(--panel); border-bottom: 1px solid var(--line);
+    font-weight: 600; cursor: pointer; user-select: none;
+  }
+  thead tr:first-child th { top: 0; }
+  thead tr:nth-child(2) th { top: 31px; }
+  th.group { text-align: center; cursor: default; }
+  th .arrow { color: var(--accent); }
+  tbody tr { border-bottom: 1px solid var(--line); cursor: pointer; }
+  tbody tr:hover { background: var(--row-hover); }
+  tbody tr.selected { background: var(--row-selected); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); font-weight: 600; }
+  .down { color: var(--down); font-weight: 600; }
+  .genes { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+  aside {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; align-self: start; position: sticky; top: 10px;
+  }
+  aside h2 { margin: 0; font-size: 18px; }
+  aside h3 { margin: 14px 0 4px; font-size: 13px; color: var(--muted); }
+  aside p { margin: 4px 0; }
+  .links a { color: var(--accent); margin-right: 12px; }
+  .hint { color: var(--muted); }
+  svg text { fill: var(--text); font-size: 11px; }
+  svg .axis { stroke: var(--muted); stroke-width: 1; }
+  svg .tick { fill: var(--muted); }
+  .mini th, .mini td { padding: 3px 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">__TITLE__</h1>
+  <p class="meta" id="meta"></p>
+</header>
+
+<section class="controls">
+  <label>Mark <select id="mark"></select></label>
+  <input id="search" type="search" list="gene-list" autocomplete="off"
+         placeholder="Search a gene, peak ID or chr1:1000-5000"
+         aria-label="Search a gene, peak ID or locus">
+  <datalist id="gene-list"></datalist>
+  <label>Comparison <select id="comparison"></select></label>
+  <label><input type="checkbox" id="diff-only"> Differential peaks only</label>
+  <button id="download" type="button">Download table (TSV)</button>
+</section>
+
+<p id="count"></p>
+<div class="layout">
+  <div class="table-wrap">
+    <table id="table"><thead></thead><tbody></tbody></table>
+  </div>
+  <aside id="detail"><p class="hint">Click a peak to see its signal.</p></aside>
+</div>
+
+<script id="report-data" type="application/json">__DATA__</script>
+<script>
+(function () {
+  "use strict";
+
+  const DATA = JSON.parse(document.getElementById("report-data").textContent);
+  const MAX_ROWS = 300;
+  const state = {
+    mark: null, comparison: null, query: "", diffOnly: false,
+    sortKey: "padj", sortAsc: true, selected: null, rows: []
+  };
+  const byId = (id) => document.getElementById(id);
+
+  // ---------- helpers ----------
+
+  function escapeHtml(text) {
+    return String(text === null || text === undefined ? "" : text)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  function formatP(p) {
+    if (p === null || p === undefined) return "NA";
+    return p < 0.001 ? p.toExponential(1) : p.toFixed(3);
+  }
+
+  function formatNumber(x) {
+    return x === null || x === undefined ? "NA" : x.toLocaleString();
+  }
+
+  function fillSelect(select, values, labels) {
+    select.innerHTML = values.map((v, i) =>
+      `<option value="${escapeHtml(v)}">${escapeHtml(labels ? labels[i] : v)}</option>`
+    ).join("");
+  }
+
+  function niceTicks(max, count) {
+    if (!(max > 0)) return [0, 1];
+    const step0 = max / count;
+    const power = Math.pow(10, Math.floor(Math.log10(step0)));
+    const step = [1, 2, 5, 10].map((m) => m * power).find((s) => s >= step0);
+    const ticks = [];
+    for (let t = 0; t <= max + step * 0.001; t += step) ticks.push(+t.toFixed(10));
+    if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step);
+    return ticks;
+  }
+
+  function comparisonLabel(c) { return c.replace(/_vs_/g, " vs "); }
+
+  function currentMark() { return DATA.marks[state.mark]; }
+
+  function genesOf(m, i) {
+    return (m.peaks.genes[i] || m.peaks.gene[i] || "").split(";").filter(Boolean);
+  }
+
+  // ---------- search and table ----------
+
+  function matches(m, i, query) {
+    if (!query) return true;
+    const q = query.trim().toLowerCase();
+    const locus = q.replace(/,/g, "").match(/^(chr\w+):(\d+)-(\d+)$/);
+    if (locus) {
+      return m.peaks.chr[i].toLowerCase() === locus[1] &&
+        m.peaks.end[i] > +locus[2] && m.peaks.start[i] < +locus[3];
+    }
+    if (m.peaks.id[i].toLowerCase() === q) return true;
+    return genesOf(m, i).some((g) => {
+      const gl = g.toLowerCase();
+      return gl === q || (q.length >= 2 && gl.startsWith(q));
+    });
+  }
+
+  function sortValue(m, i, key) {
+    const de = state.comparison ? m.de[state.comparison] : null;
+    switch (key) {
+      case "padj": return de ? de.padj[i] : null;
+      case "lfc": return de ? de.lfc[i] : null;
+      case "abslfc": return de && de.lfc[i] !== null ? -Math.abs(de.lfc[i]) : null;
+      case "gene": return m.peaks.gene[i] || "";
+      case "anno": return m.peaks.anno[i] || "";
+      case "dist": return m.peaks.dist[i] === null ? null : Math.abs(m.peaks.dist[i]);
+      default: return i;
+    }
+  }
+
+  function filterRows() {
+    const m = currentMark();
+    const de = state.comparison ? m.de[state.comparison] : null;
+    const rows = [];
+    for (let i = 0; i < m.peaks.id.length; i++) {
+      if (!matches(m, i, state.query)) continue;
+      if (state.diffOnly && (!de || de.dir[i] === "NS" || de.dir[i] === null)) continue;
+      rows.push(i);
+    }
+    const dir = state.sortAsc ? 1 : -1;
+    rows.sort((a, b) => {
+      const va = sortValue(m, a, state.sortKey);
+      const vb = sortValue(m, b, state.sortKey);
+      if (va === null && vb === null) return a - b;
+      if (va === null) return 1;
+      if (vb === null) return -1;
+      return (va < vb ? -1 : va > vb ? 1 : 0) * dir || a - b;
+    });
+    return rows;
+  }
+
+  function headerHtml(m) {
+    const arrow = (key) => state.sortKey === key
+      ? ` <span class="arrow">${state.sortAsc ? "&#9650;" : "&#9660;"}</span>` : "";
+    const comparisons = m.comparisons;
+    let top = `<tr><th rowspan="2">Peak</th><th rowspan="2">Locus</th>
+      <th rowspan="2" data-sort="anno">Feature${arrow("anno")}</th>
+      <th rowspan="2" data-sort="dist">Dist. to TSS${arrow("dist")}</th>
+      <th rowspan="2" data-sort="gene">Genes${arrow("gene")}</th>`;
+    let bottom = "<tr>";
+    comparisons.forEach((c) => {
+      top += `<th class="group" colspan="2">${escapeHtml(comparisonLabel(c))}</th>`;
+      const active = c === state.comparison;
+      bottom += `<th class="num" data-sort="${active ? "lfc" : ""}" data-comparison="${escapeHtml(c)}">log2FC${active ? arrow("lfc") : ""}</th>
+        <th class="num" data-sort="${active ? "padj" : ""}" data-comparison="${escapeHtml(c)}">padj${active ? arrow("padj") : ""}</th>`;
+    });
+    return top + "</tr>" + bottom + "</tr>";
+  }
+
+  function rowHtml(m, i) {
+    const genes = genesOf(m, i);
+    let html = `<tr data-row="${i}" class="${i === state.selected ? "selected" : ""}">
+      <td>${escapeHtml(m.peaks.id[i])}</td>
+      <td>${escapeHtml(m.peaks.chr[i])}:${formatNumber(m.peaks.start[i])}-${formatNumber(m.peaks.end[i])}</td>
+      <td>${escapeHtml(m.peaks.anno[i] || "NA")}</td>
+      <td class="num">${formatNumber(m.peaks.dist[i])}</td>
+      <td class="genes" title="${escapeHtml(genes.join(", "))}">${escapeHtml(genes.join(", "))}</td>`;
+    m.comparisons.forEach((c) => {
+      const de = m.de[c];
+      const cls = de.dir[i] === "Up" ? "up" : de.dir[i] === "Down" ? "down" : "";
+      const lfc = de.lfc[i] === null ? "NA" : de.lfc[i].toFixed(2);
+      html += `<td class="num ${cls}">${lfc}</td><td class="num ${cls}">${formatP(de.padj[i])}</td>`;
+    });
+    return html + "</tr>";
+  }
+
+  function render() {
+    const m = currentMark();
+    state.rows = filterRows();
+    const shown = state.rows.slice(0, MAX_ROWS);
+    byId("table").tHead.innerHTML = headerHtml(m);
+    byId("table").tBodies[0].innerHTML = shown.map((i) => rowHtml(m, i)).join("");
+    const total = m.peaks.id.length.toLocaleString();
+    byId("count").textContent = `${state.rows.length.toLocaleString()} of ${total} peaks` +
+      (state.rows.length > MAX_ROWS ? ` (showing the first ${MAX_ROWS})` : "");
+    if (!state.rows.includes(state.selected)) {
+      state.selected = shown.length ? shown[0] : null;
+      const row = byId("table").querySelector(`tr[data-row="${state.selected}"]`);
+      if (row) row.classList.add("selected");
+    }
+    renderDetail();
+  }
+
+  // ---------- detail panel ----------
+
+  function profileSvg(m, i) {
+    const W = 380, H = 190, L = 44, R = 10, T = 10, B = 34;
+    const nBins = m.bins.length;
+    const series = m.conditions.map((c, k) =>
+      m.profile[i].slice(k * nBins, (k + 1) * nBins));
+    const ticks = niceTicks(Math.max(...series.flat(), 0.001), 4);
+    const yMax = ticks[ticks.length - 1];
+    const xMin = m.bins[0], xMax = m.bins[nBins - 1];
+    const x = (v) => L + (v - xMin) / (xMax - xMin) * (W - L - R);
+    const y = (v) => H - B - v / yMax * (H - T - B);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Signal profile">`;
+    ticks.forEach((t) => {
+      svg += `<line class="axis" x1="${L - 4}" x2="${L}" y1="${y(t)}" y2="${y(t)}"/>
+        <text class="tick" x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${t}</text>`;
+    });
+    [-2000, -1000, 0, 1000, 2000].forEach((t) => {
+      if (t < xMin - 100 || t > xMax + 100) return;
+      const xt = Math.min(Math.max(x(t), L), W - R);
+      svg += `<line class="axis" x1="${xt}" x2="${xt}" y1="${H - B}" y2="${H - B + 4}"/>
+        <text class="tick" x="${xt}" y="${H - B + 16}" text-anchor="middle">${t / 1000}</text>`;
+    });
+    svg += `<line class="axis" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
+      <line class="axis" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>
+      <text x="${(L + W - R) / 2}" y="${H - 4}" text-anchor="middle">Distance to peak center (kb)</text>
+      <text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Signal (CPM)</text>`;
+    series.forEach((values, k) => {
+      const points = values.map((v, j) => `${x(m.bins[j]).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+      svg += `<polyline points="${points}" fill="none" stroke="${m.colors[m.conditions[k]]}" stroke-width="2"/>`;
+    });
+    m.conditions.forEach((c, k) => {
+      svg += `<rect x="${W - R - 90}" y="${T + 4 + k * 16}" width="10" height="3" fill="${m.colors[c]}"/>
+        <text x="${W - R - 76}" y="${T + 9 + k * 16}">${escapeHtml(c)}</text>`;
+    });
+    return svg + "</svg>";
+  }
+
+  function countsSvg(m, i) {
+    const W = 380, H = 170, L = 44, R = 10, T = 10, B = 26;
+    const values = m.counts[i];
+    const ticks = niceTicks(Math.max(...values, 0.001), 4);
+    const yMax = ticks[ticks.length - 1];
+    const band = (W - L - R) / m.conditions.length;
+    const y = (v) => H - B - v / yMax * (H - T - B);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Normalized counts">`;
+    ticks.forEach((t) => {
+      svg += `<line class="axis" x1="${L - 4}" x2="${L}" y1="${y(t)}" y2="${y(t)}"/>
+        <text class="tick" x="${L - 6}" y="${y(t) + 4}" text-anchor="end">${t}</text>`;
+    });
+    svg += `<line class="axis" x1="${L}" x2="${L}" y1="${T}" y2="${H - B}"/>
+      <line class="axis" x1="${L}" x2="${W - R}" y1="${H - B}" y2="${H - B}"/>
+      <text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Normalized count</text>`;
+    m.conditions.forEach((c, k) => {
+      const center = L + band * (k + 0.5);
+      const idx = m.samples.map((s, j) => j).filter((j) => m.sampleCondition[j] === c);
+      const mean = idx.reduce((sum, j) => sum + values[j], 0) / Math.max(idx.length, 1);
+      svg += `<line x1="${center - band * 0.25}" x2="${center + band * 0.25}" y1="${y(mean)}" y2="${y(mean)}" stroke="currentColor" stroke-width="1.5"/>`;
+      idx.forEach((j, n) => {
+        const offset = (n - (idx.length - 1) / 2) * 10;
+        svg += `<circle cx="${center + offset}" cy="${y(values[j])}" r="4" fill="${m.colors[c]}">
+          <title>${escapeHtml(m.samples[j])}: ${values[j]}</title></circle>`;
+      });
+      svg += `<text x="${center}" y="${H - 8}" text-anchor="middle">${escapeHtml(c)}</text>`;
+    });
+    return svg + "</svg>";
+  }
+
+  function renderDetail() {
+    const panel = byId("detail");
+    const m = currentMark();
+    const i = state.selected;
+    if (i === null || i === undefined) {
+      panel.innerHTML = '<p class="hint">No peak matches the search.</p>';
+      return;
+    }
+    const chr = m.peaks.chr[i], start = m.peaks.start[i], end = m.peaks.end[i];
+    const pad = 5000;
+    const view = `${chr}:${Math.max(1, start + 1 - pad)}-${end + pad}`;
+    const ucsc = `https://genome.ucsc.edu/cgi-bin/hgTracks?db=${encodeURIComponent(DATA.species)}&position=${encodeURIComponent(view)}`;
+    const igv = `http://localhost:60151/goto?locus=${encodeURIComponent(view)}`;
+    const genes = genesOf(m, i);
+    let stats = '<table class="mini"><tr><th>Comparison</th><th class="num">log2FC</th><th class="num">padj</th><th></th></tr>';
+    m.comparisons.forEach((c) => {
+      const de = m.de[c];
+      const cls = de.dir[i] === "Up" ? "up" : de.dir[i] === "Down" ? "down" : "";
+      stats += `<tr><td>${escapeHtml(comparisonLabel(c))}</td>
+        <td class="num ${cls}">${de.lfc[i] === null ? "NA" : de.lfc[i].toFixed(2)}</td>
+        <td class="num ${cls}">${formatP(de.padj[i])}</td>
+        <td class="${cls}">${escapeHtml(de.dir[i] || "")}</td></tr>`;
+    });
+    stats += "</table>";
+    panel.innerHTML = `
+      <h2>${escapeHtml(m.peaks.gene[i] || m.peaks.id[i])}</h2>
+      <p>${escapeHtml(m.peaks.id[i])} &middot; ${escapeHtml(chr)}:${formatNumber(start)}-${formatNumber(end)}
+        (${formatNumber(end - start)} bp)</p>
+      <p>${escapeHtml(m.peaks.anno[i] || "NA")}, ${formatNumber(m.peaks.dist[i])} bp from the TSS</p>
+      ${genes.length > 1 ? `<p class="hint">Nearby genes: ${escapeHtml(genes.join(", "))}</p>` : ""}
+      <p class="links"><a href="${ucsc}" target="_blank" rel="noopener">UCSC browser</a>
+        <a href="${igv}" target="_blank" rel="noopener" title="Needs IGV desktop running">IGV</a></p>
+      <h3>Signal around the peak (mean of replicates)</h3>${profileSvg(m, i)}
+      <h3>Normalized read counts</h3>${countsSvg(m, i)}
+      <h3>Differential statistics</h3>${m.comparisons.length ? stats : '<p class="hint">No comparisons.</p>'}`;
+  }
+
+  // ---------- events ----------
+
+  function selectMark(mark) {
+    state.mark = mark;
+    const m = currentMark();
+    fillSelect(byId("comparison"), m.comparisons, m.comparisons.map(comparisonLabel));
+    state.comparison = m.comparisons.length ? m.comparisons[0] : null;
+    byId("comparison").disabled = !m.comparisons.length;
+    const genes = new Set();
+    for (let i = 0; i < m.peaks.id.length; i++) genesOf(m, i).forEach((g) => genes.add(g));
+    byId("gene-list").innerHTML = [...genes].sort().slice(0, 30000)
+      .map((g) => `<option value="${escapeHtml(g)}">`).join("");
+    state.selected = null;
+    render();
+  }
+
+  function downloadTable() {
+    const m = currentMark();
+    const header = ["peak", "chr", "start", "end", "feature", "distance_to_tss", "genes"];
+    m.comparisons.forEach((c) => header.push(`${c}_log2FC`, `${c}_padj`, `${c}_direction`));
+    const lines = [header.join("\t")];
+    state.rows.forEach((i) => {
+      const row = [m.peaks.id[i], m.peaks.chr[i], m.peaks.start[i], m.peaks.end[i],
+        m.peaks.anno[i], m.peaks.dist[i], genesOf(m, i).join(";")];
+      m.comparisons.forEach((c) => row.push(m.de[c].lfc[i], m.de[c].padj[i], m.de[c].dir[i]));
+      lines.push(row.map((v) => (v === null || v === undefined ? "NA" : v)).join("\t"));
+    });
+    const blob = new Blob([lines.join("\n") + "\n"], { type: "text/tab-separated-values" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${state.mark}_peaks${state.query ? "_" + state.query : ""}.tsv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  function init() {
+    const marks = Object.keys(DATA.marks);
+    byId("meta").textContent = `${DATA.project} · genome ${DATA.species} · ` +
+      `pipeline ${DATA.version || ""} · ${DATA.date}`;
+    if (!marks.length) {
+      byId("count").textContent = "No results to show.";
+      return;
+    }
+    fillSelect(byId("mark"), marks);
+    const params = new URLSearchParams(location.hash.slice(1));
+    const mark = marks.includes(params.get("mark")) ? params.get("mark") : marks[0];
+    byId("mark").value = mark;
+    state.query = params.get("q") || "";
+    byId("search").value = state.query;
+
+    byId("mark").addEventListener("change", (e) => selectMark(e.target.value));
+    byId("comparison").addEventListener("change", (e) => {
+      state.comparison = e.target.value;
+      render();
+    });
+    byId("diff-only").addEventListener("change", (e) => {
+      state.diffOnly = e.target.checked;
+      render();
+    });
+    let timer = null;
+    byId("search").addEventListener("input", (e) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        state.query = e.target.value;
+        state.selected = null;
+        render();
+      }, 150);
+    });
+    byId("download").addEventListener("click", downloadTable);
+    byId("table").addEventListener("click", (e) => {
+      const th = e.target.closest("th[data-sort]");
+      if (th) {
+        const key = th.dataset.sort;
+        if (!key) {
+          state.comparison = th.dataset.comparison;
+          byId("comparison").value = state.comparison;
+          state.sortKey = "padj";
+        } else if (state.sortKey === key) {
+          state.sortAsc = !state.sortAsc;
+        } else {
+          state.sortKey = key;
+          state.sortAsc = true;
+        }
+        render();
+        return;
+      }
+      const tr = e.target.closest("tr[data-row]");
+      if (tr) {
+        byId("table").querySelectorAll("tr.selected").forEach((r) => r.classList.remove("selected"));
+        tr.classList.add("selected");
+        state.selected = +tr.dataset.row;
+        renderDetail();
+      }
+    });
+    selectMark(mark);
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
