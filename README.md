@@ -4,7 +4,7 @@ A CUT&RUN analysis pipeline for histone marks and chromatin proteins, from paire
 gene annotation, count matrices, differential peaks, publication-style figures and a searchable HTML report.
 Written in plain bash and R; runs on an HPC cluster (LSF or SLURM) or on one computer.
 
-You fill in **a sample list** and **a config file**, and run **one command**.
+Fill in **a sample list** and **a config file**, and run **one command**.
 
 ```
 FASTQ ─▶ FastQC + MultiQC ─▶ fastp ─▶ bowtie2 ─▶ filter + remove duplicates ─▶ BAM ─▶ bigwig
@@ -182,8 +182,7 @@ Exact versions are in `Log/software_versions.txt` and `DiffPeak/<mark>/sessionIn
 ## 10. Contributing, citation, license
 
 - **Contributing**: questions, bug reports and changes are welcome. Open an issue (bug report or feature
-  request template) or a pull request; see [CONTRIBUTING.md](CONTRIBUTING.md) for how, and
-  [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Contributors are credited in
+  request template) or a pull request. Contributors are credited in
   [CONTRIBUTORS.md](CONTRIBUTORS.md); changes are listed in [CHANGELOG.md](CHANGELOG.md).
 - **Citation**: please cite this pipeline ([CITATION.cff](CITATION.cff)) and the tools it uses: FastQC,
   MultiQC, fastp, Bowtie2, SAMtools, deepTools, MACS2, FlexPeak, BEDTools, Subread/featureCounts, DESeq2,
