@@ -1,0 +1,7 @@
+# ShellCheck settings (Google shell style), used by the lint-bash CI job
+#
+# Off: SC1091 "Not following": scripts find common.sh and config.sh from their
+#      own location at run time, which ShellCheck cannot resolve
+# Off: SC2153 "Possible misspelling": settings in capitals (FASTP_ARGS,
+#      MIN_REPS, ...) are set in config.sh, read at run time
+disable=SC1091,SC2153

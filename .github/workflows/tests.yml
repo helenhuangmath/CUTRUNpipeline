@@ -1,5 +1,6 @@
-# Lint (Google style: ShellCheck, lintr) and the full test suite on every
-# push and pull request
+# Lint (Google style: ShellCheck, lintr), the full test suite with the conda
+# environments (as on a cluster) and in the Docker image (as on one computer),
+# on every push and pull request
 name: tests
 
 on:
@@ -9,38 +10,41 @@ on:
 jobs:
 
   lint-bash:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - name: ShellCheck (settings in .shellcheckrc)
-        run: shellcheck run_pipeline.sh check_status.sh scripts/*.sh reference/*.sh tests/*.sh
+        run: shellcheck run_pipeline.sh check_status.sh scripts/*.sh reference/*.sh tests/*.sh docker/*.sh
       - name: Lines of at most 80 characters
         run: |
           ! awk 'length > 80 { print FILENAME ":" FNR; found = 1 } END { exit !found }' \
-            run_pipeline.sh check_status.sh scripts/*.sh reference/*.sh tests/*.sh
+            run_pipeline.sh check_status.sh scripts/*.sh reference/*.sh tests/*.sh docker/*.sh
 
   lint-r:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true    # binary R packages: minutes, not 20+
       - name: Install lintr
-        run: Rscript -e 'install.packages("lintr", repos = "https://cloud.r-project.org")'
+        run: Rscript -e 'install.packages("lintr")'
       - name: lintr (settings in .lintr)
         run: |
           Rscript -e 'lints <- lintr::lint_dir("scripts/R"); print(lints); quit(status = length(lints) > 0)'
 
   pipeline:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash -el {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest
+          conda-remove-defaults: "true"
 
       - name: Create the pipeline conda environments (envs/*.yml)
         run: |
@@ -55,9 +59,34 @@ jobs:
 
       - name: Keep logs if the tests fail
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-logs
           path: |
             tests/test_output/*.log
             tests/test_output/Data/Log/
+            tests/test_output/Data/Peak/*/*.log
+
+  docker:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build the Docker image (Dockerfile)
+        run: docker build --platform linux/amd64 -t cutrunpipeline .
+
+      - name: Run tests in the image
+        run: |
+          mkdir -p docker_test
+          docker run --rm -v "${PWD}/docker_test:/out" cutrunpipeline \
+            bash tests/run_tests.sh /out/test_output
+
+      - name: Keep logs if the tests fail
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: docker-test-logs
+          path: |
+            docker_test/test_output/*.log
+            docker_test/test_output/Data/Log/
+            docker_test/test_output/Data/Peak/*/*.log

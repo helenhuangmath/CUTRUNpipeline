@@ -16,6 +16,20 @@
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 #######################################
+# Runs a peak caller; if it fails, shows the end of its log in the job log
+# and stops.
+# Arguments:
+#   Log file, peak caller command and its arguments.
+#######################################
+run_caller() {
+  local caller_log="$1"
+  if ! "${@:2}" 2> "${caller_log}"; then
+    tail -n 20 "${caller_log}" >&2
+    die "$2 failed, see ${caller_log}"
+  fi
+}
+
+#######################################
 # Calls peaks with MACS2.
 # Arguments:
 #   Sample ID, mark, IgG control BAM (or "").
@@ -32,10 +46,10 @@ call_macs2() {
   #   -f BAMPE       : use the real fragment of each read pair
   #   --keep-dup all : duplicates were already handled in step 2
   log "${sample_id}: macs2 ${macs2_args[*]}"
-  macs2 callpeak -t "BAM/${sample_id}.map.dedup.bam" \
+  run_caller "Peak/MACS2/peak_${sample_id}.macs2.log" \
+    macs2 callpeak -t "BAM/${sample_id}.map.dedup.bam" \
     -f "${MACS2_FORMAT}" -g "${REFSIZE}" --keep-dup all "${macs2_args[@]}" \
-    --outdir Peak/MACS2 -n "peak_${sample_id}" \
-    2> "Peak/MACS2/peak_${sample_id}.macs2.log"
+    --outdir Peak/MACS2 -n "peak_${sample_id}"
 
   local peak_type=narrowPeak
   if [[ " ${macs2_args[*]} " == *" --broad "* ]]; then peak_type=broadPeak; fi
@@ -60,10 +74,11 @@ call_flexpeak() {
   #   --mapq      : reads were already filtered in step 2
   #   --cache-dir : coverage cache, kept out of the BAM folder
   log "${sample_id}: flexpeak ${flexpeak_args[*]}"
-  flexpeak callpeak -t "BAM/${sample_id}.map.dedup.bam" "${flexpeak_args[@]}" \
-    --mapq "${MIN_MAPQ}" --blacklist "${BLACKLIST}" \
+  run_caller "Peak/FlexPeak/peak_${sample_id}.flexpeak.log" \
+    flexpeak callpeak -t "BAM/${sample_id}.map.dedup.bam" \
+    "${flexpeak_args[@]}" --mapq "${MIN_MAPQ}" --blacklist "${BLACKLIST}" \
     --cache-dir Peak/FlexPeak/cache --outdir Peak/FlexPeak \
-    -n "peak_${sample_id}" 2> "Peak/FlexPeak/peak_${sample_id}.flexpeak.log"
+    -n "peak_${sample_id}"
   echo "Peak/FlexPeak/peak_${sample_id}_peaks.broadPeak"
 }
 

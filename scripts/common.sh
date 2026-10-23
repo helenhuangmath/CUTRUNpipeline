@@ -4,6 +4,9 @@
 # This file is a library: every pipeline script sources it. Do not run it.
 
 set -Eeo pipefail
+# Also stop on errors inside $(...), e.g. raw_peaks="$(call_macs2 ...)"
+# (bash >= 4.4; the bash 3.2 of macOS does not have it)
+shopt -s inherit_errexit 2> /dev/null || true
 trap 'err "failed in $(basename "$0") line ${LINENO}: ${BASH_COMMAND}"' ERR
 
 PIPELINE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -52,6 +55,8 @@ read_config() {
   CONFIG="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"
   # shellcheck source=../config/config.sh
   source "${CONFIG}"
+  # The Docker image runs all jobs in the container (Dockerfile)
+  if [[ -n "${CUTRUN_SCHEDULER:-}" ]]; then SCHEDULER="${CUTRUN_SCHEDULER}"; fi
 
   # Defaults
   : "${PEAK_SETTINGS:=${PIPELINE_DIR}/config/peak_settings.txt}"

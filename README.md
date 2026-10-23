@@ -40,6 +40,29 @@ pip install "/path/to/FlexPeak[bam,fast]"
 Software versions are fixed in `envs/*.yml`, so every user gets the same versions. If your cluster uses
 modules instead, leave `CONDA_ENV` empty in the config and list the modules in `MODULES`.
 
+**On one computer (laptop, workstation, cloud VM): Docker instead of conda.** The image has both
+environments; nothing else to install. Not for HPC clusters (no Docker there; use conda above).
+
+```bash
+cd ~/CUTRUNpipeline
+docker build --platform linux/amd64 -t cutrunpipeline .   # once, ~15 min
+docker run --rm cutrunpipeline                            # optional: run the tests in the image
+
+# Reference genome (section 2), into ~/indexes
+docker run --rm --platform linux/amd64 -u "$(id -u):$(id -g)" -e HOME=/tmp \
+  -v ~/indexes:/indexes cutrunpipeline bash reference/build_reference.sh mm10 /indexes 8
+
+# Run the pipeline (sections 4-5): same config.sh as on a cluster
+bash ~/CUTRUNpipeline/docker/run_docker.sh config.sh            # or: config.sh diff
+bash ~/CUTRUNpipeline/docker/run_docker.sh --status config.sh
+```
+
+`run_docker.sh` mounts the folders of `config.sh` (`WORKDIR`, `DATADIR`, `LIBRARIES`, the sample list, ...)
+at the same paths and runs all jobs in the container (`SCHEDULER` is ignored), one after another. Give
+Docker enough memory and CPUs (Docker Desktop: Settings > Resources; `THREADS` in config.sh). Apple
+Silicon Macs run the image through emulation (slower). FlexPeak:
+`docker build --build-arg FLEXPEAK="flexpeak[bam] @ git+<FlexPeak repository URL>" ...`.
+
 ## 2. Reference genome (once per genome)
 
 ```bash

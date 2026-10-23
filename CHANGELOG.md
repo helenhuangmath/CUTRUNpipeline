@@ -4,6 +4,20 @@ All notable changes are listed here. Version numbers follow [Semantic Versioning
 MAJOR (results or inputs change in a way that is not backward compatible), MINOR (new features),
 PATCH (bug fixes).
 
+## [Unreleased]
+
+### Added
+- Docker image with all software (`Dockerfile`) and `docker/run_docker.sh` to run the pipeline on
+  one computer with the same `config.sh`; tested in CI.
+
+### Fixed
+- A failed command inside `$(...)` did not stop the script (bash `inherit_errexit`): e.g. after
+  MACS2 failed, the peak step went on with a missing peak file and hid the real error.
+- When MACS2 or FlexPeak fails, the end of its log is shown in the job log.
+- CI: ShellCheck settings (`.shellcheckrc`) were missing, so the lint job failed on notes about
+  sourced files and settings from `config.sh`.
+- CI: MACS2 logs are kept when the tests fail; actions updated to Node 24; faster lintr install.
+
 ## [0.1.0] - 2026-10-23
 
 First version, rebuilt from the lab's CUT&RUN scripts (2020-2026) into one pipeline.
