@@ -1,0 +1,8 @@
+# Comparisons for DESeq2, tab-separated. Lines starting with # are skipped.
+#   mark        histone mark (* = all marks)
+#   treatment   e.g. Arm   (log2FC > 0 means higher in Arm)
+#   reference   e.g. Naive
+mark	treatment	reference
+*	Arm	Naive
+*	Cl13	Naive
+*	Cl13	Arm

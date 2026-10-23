@@ -1,0 +1,7 @@
+# Test results (made by tests/run_tests.sh)
+tests/test_output/
+
+# R and system files
+.Rhistory
+.RData
+.DS_Store

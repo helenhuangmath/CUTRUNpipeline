@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this pipeline, please cite it as below, and cite the tools it uses (see README, section Citation)."
+title: "CUTRUNpipeline: CUT&RUN analysis from FASTQ to differential peaks"
+version: 0.1.0
+date-released: 2026-10-23
+license: MIT
+authors:
+  - family-names: Huang
+    given-names: Hua
+keywords:
+  - CUT&RUN
+  - epigenomics
+  - histone modification
+  - peak calling
+  - differential binding

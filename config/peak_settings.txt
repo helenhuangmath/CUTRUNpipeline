@@ -1,0 +1,24 @@
+# Peak settings of each histone mark, tab-separated. Marks not listed use the "default" row.
+#   macs2_options     MACS2 options, written as on the command line
+#                       --broad              call broad peaks (otherwise narrow peaks)
+#                       -q 0.05 / -p 1e-6    q-value (FDR) or p-value cutoff
+#                       --broad-cutoff       cutoff for linking broad regions
+#                       --min-length         minimum peak width
+#                       --max-gap            join peaks closer than this
+#                       --llocal             window for local background
+#   flexpeak_options  FlexPeak options (empty: FlexPeak tunes itself)
+#                       --preset             tf | h3k4me3 | h3k27ac | h3k27me3 | h3k9me3 | h3k36me3
+#                       --no-tune            skip the self-tuning sweep (faster, reproducible)
+#   min_fold          remove peaks with fold enrichment below this
+#   consensus_gap     replicate peaks closer than this (bp) count as the same peak
+#   union_gap         merge consensus peaks of different conditions closer than this (bp)
+#   min_width         remove union peaks narrower than this (bp)
+mark	macs2_options	flexpeak_options	min_fold	consensus_gap	union_gap	min_width
+default	--broad -q 0.05 --broad-cutoff 0.1		1	0	0	100
+IgG	--broad -q 0.01 --broad-cutoff 0.05		1	0	0	0
+H3K27ac	--broad -q 0.05 --broad-cutoff 0.1 --llocal 30000	--preset h3k27ac	1	200	100	100
+H3K4me3	--broad -q 0.05 --broad-cutoff 0.1 --min-length 200 --max-gap 500 --llocal 20000	--preset h3k4me3	1	200	100	100
+H3K4me1	--broad -q 0.05 --broad-cutoff 0.1		1	200	100	100
+CTCF	-q 0.05 --llocal 20000	--preset tf	1	100	0	50
+H3K27me3	--broad -p 1e-6 --broad-cutoff 1e-3 --min-length 300 --max-gap 1000 --llocal 50000	--preset h3k27me3	1	200	500	300
+H3K9me3	--broad -p 1e-6 --broad-cutoff 1e-3 --min-length 300 --max-gap 1500 --llocal 50000	--preset h3k9me3	1.2	300	300	300

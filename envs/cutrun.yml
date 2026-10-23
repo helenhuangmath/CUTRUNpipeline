@@ -1,0 +1,25 @@
+# Command-line tools for the CUT&RUN pipeline
+# Create once:  conda env create -f envs/cutrun.yml   (mamba is faster)
+# FlexPeak (PEAK_CALLERS="... flexpeak") is installed into this environment
+# from its source folder:
+#   conda activate cutrun
+#   pip install "/path/to/FlexPeak[bam,fast]"
+name: cutrun
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - fastqc=0.12
+  - fastp=0.23
+  - multiqc=1.21
+  - bowtie2=2.5
+  - samtools=1.19
+  - bedtools=2.31
+  - deeptools=3.5
+  - macs2=2.2.9.1
+  - subread=2.0.6     # featureCounts with --countReadPairs
+  - pysam             # used by FlexPeak to read BAM files
+  - homer=4.11        # optional: only used if HOMER_GENOME is set
+  - curl
+  - pip
